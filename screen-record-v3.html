@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Processing</title>
+    <style>
+        * {
+            margin: 5px;
+        }
+
+        body {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            grid-template-columns: 1fr;
+            gap: 20px;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+
+        header {
+            text-align: center;
+        }
+
+        #content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        video,
+        canvas {
+            border: 1px solid black;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Real-Time Camera Processing</h1>
+    </header>
+    <main id="content">
+        <video style="display: none;" id="video" autoplay playsinline></video>
+        <canvas id="canvas"></canvas>
+        <button onclick="makePhoto()">
+            Photo
+        </button>
+        <input type="file" onchange="openFile(event.target.files[0])" multiple="false">
+    </main>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        const intensityMap = [
+            { threshold: 400, value: 255 },
+            { threshold: 350, value: 230 },
+            { threshold: 300, value: 200 },
+            { threshold: 250, value: 150 },
+            { threshold: 200, value: 100 },
+            { threshold: 150, value: 50 },
+            { threshold: 100, value: 30 },
+        ];
+
+        const valueIndex = [0, 30, 50, 100, 150, 200, 230, 255];
+
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                video.addEventListener('loadedmetadata', () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    processCameraFeed();
+                });
+            } catch (error) {
+                console.error("Error accessing camera:", error);
+            }
+        }
+
+        function openFile(file) {
+            if (!file) {
+                alert("error: no file provided. please select a file")
+            }
+            const fr = new FileReader()
+
+            fr.onload = () => {
+                const imgData = new Uint8Array(fr.result);
+
+                // Parse width and height from the first 4 bytes
+                const width = (imgData[1] << 8) | imgData[0];
+                const height = (imgData[3] << 8) | imgData[2];
+
+                canvas.width = width;
+                canvas.height = height;
+
+                const data = new Uint8ClampedArray(width * height * 4);
+
+                let dataIndex = 0;
+                for (let i = 4; i < imgData.length; i++) {
+                    const packed = imgData[i];
+                    const count = packed & 0b00011111;
+                    const valueId = packed >> 5;
+                    const intensity = valueIndex[valueId];
+
+                    for (let j = 0; j < count; j++) {
+                        data[dataIndex++] = valueId; // R
+                        data[dataIndex++] = valueId; // G
+                        data[dataIndex++] = valueId; // B
+                        data[dataIndex++] = 255;       // A (alpha)
+                    }
+                }
+
+                ctx.putImageData(new ImageData(data, width, height), 0, 0);
+
+            }
+
+            fr.readAsArrayBuffer(file)
+        }
+
+        function makePhoto() {
+            processCameraFeed();
+            const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = img.data;
+
+            const out = []
+
+            let state = 255;
+            let count = 1;
+
+            for (let index = 0; index < data.length; index += 4) {
+                if (data[index] == state) {
+                    count++;
+                    if (count == 32) {
+                        out.push([count, valueIndex.indexOf(state)]);
+                        count = 0;
+                    }
+                }
+                else {
+                    out.push([count, valueIndex.indexOf(state)]);
+                    count = 1;
+                    state = data[index];
+                }
+            }
+
+            const outData = new Uint8Array(out.length)
+            for (let index = 0; index < out.length; index++) {
+                outData[index] = out[index][0] | out[index][1] << 5;
+            }
+            const blob = new Blob([new Uint16Array([img.width, img.height]), outData], { type: "binary" });
+            const a = document.createElement("a")
+            a.href = URL.createObjectURL(blob);
+            a.download = prompt("image file name:", "image.mwi");
+            a.click()
+
+        }
+
+        function processCameraFeed() {
+            // requestAnimationFrame(processCameraFeed);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // Access pixel data and manipulate the frame
+            const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = img.data;
+
+            const offset = (x, y) => (y * img.width + x) * 4
+
+            for (let x = 0; x < img.width; x++) {
+                for (let y = img.height; y > 0; y--) {
+                    const off = offset(x, y)
+                    const v = (data[off] + data[off + 1] + data[off + 2]);
+
+                    let intensity = 0;
+
+                    for (const { threshold, value } of intensityMap) {
+                        if (v > threshold) {
+                            intensity = value;
+                            break;
+                        }
+                    }
+
+                    data[off] = intensity;
+                    data[off + 1] = intensity;
+                    data[off + 2] = intensity;
+                }
+            }
+
+            ctx.putImageData(img, 0, 0);
+        }
+
+        startCamera();
+    </script>
+</body>
+
+</html>

@@ -30,6 +30,10 @@
             gap: 20px;
         }
 
+        video.hidden {
+            display: none;
+        }
+
         video,
         canvas {
             border: 1px solid black;
@@ -43,16 +47,22 @@
         <h1>Real-Time Camera Processing</h1>
     </header>
     <main id="content">
-        <video id="video" style="display: none;" autoplay playsinline></video>
+        <video class="hidden" id="video" autoplay playsinline></video>
         <canvas id="canvas"></canvas>
-        <button onclick="makePhoto()">Photo</button>
-        <input type="file" onchange="openFile(event.target.files[0])" accept=".mwi" multiple="false">
+        <button onclick="makePhoto()">Take Photo</button>
+        <button id="record-button" onclick="toggleIsRecording()">Stop Record</button>
+        <input type="file" id="fileInput" accept=".mwi" multiple="false">
     </main>
 
     <script>
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
+        let isRecording = true
+
+        function toggleIsRecording() {
+            isRecording = !isRecording
+        }
 
         const intensityMap = [
             { threshold: 400, value: 255 },
@@ -77,18 +87,20 @@
                 });
             } catch (error) {
                 console.error("Error accessing camera:", error);
+                alert("Could not access the camera.");
             }
         }
 
         function openFile(file) {
             if (!file) {
-                alert("Error: no file provided. Please select a file.");
+                alert("No file provided. Please select a file.");
                 return;
             }
-            const fr = new FileReader();
+            const fileReader = new FileReader();
 
-            fr.onload = () => {
-                const imgData = new Uint8Array(fr.result);
+            fileReader.onload = () => {
+                isRecording = false
+                const imgData = new Uint8Array(fileReader.result);
 
                 // Parse width and height from the first 4 bytes
                 const width = (imgData[1] << 8) | imgData[0];
@@ -98,97 +110,104 @@
                 canvas.height = height;
 
                 const data = new Uint8ClampedArray(width * height * 4);
-
+                const values = valueIndex.reverse();
                 let dataIndex = 0;
+
                 for (let i = 4; i < imgData.length; i++) {
                     const packed = imgData[i];
                     const count = packed & 0b00011111;
                     const valueId = packed >> 5;
-                    const intensity = valueIndex[valueId];
+                    const intensity = values[valueId];
 
                     for (let j = 0; j < count; j++) {
                         data[dataIndex++] = intensity; // R
                         data[dataIndex++] = intensity; // G
                         data[dataIndex++] = intensity; // B
-                        data[dataIndex++] = 255; // A (alpha)
+                        data[dataIndex++] = 255;       // A (alpha)
                     }
                 }
 
                 ctx.putImageData(new ImageData(data, width, height), 0, 0);
             };
 
-            fr.readAsArrayBuffer(file);
+            fileReader.onerror = (err) => {
+                console.error("Error reading file:", err);
+                alert("Could not read the file. Ensure it’s in the correct format.");
+            };
+
+            fileReader.readAsArrayBuffer(file);
         }
 
         function makePhoto() {
+            processCameraFeed();
             const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const data = img.data;
 
             const out = [];
             let state = 255;
-            let count = 0;
+            let count = 1;
 
             for (let index = 0; index < data.length; index += 4) {
                 if (data[index] === state) {
                     count++;
                     if (count === 32) {
-                        out.push(count | (valueIndex.indexOf(state) << 5));
+                        out.push((count << 5) | valueIndex.indexOf(state));
                         count = 0;
                     }
                 } else {
-                    if (count > 0) {
-                        out.push(count | (valueIndex.indexOf(state) << 5));
-                    }
-                    count = 1;
+                    out.push((count << 5) | valueIndex.indexOf(state));
                     state = data[index];
+                    count = 1;
                 }
             }
-            if (count > 0) {
-                out.push(count | (valueIndex.indexOf(state) << 5));
-            }
 
-            const blob = new Blob([
-                new Uint16Array([canvas.width, canvas.height]),
-                new Uint8Array(out),
-            ], { type: "application/octet-stream" });
+            const header = new Uint16Array([img.width, img.height]);
+            const body = new Uint8Array(out.reverse());
 
+            const blob = new Blob([header, body], { type: "application/octet-stream" });
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
-            a.download = prompt("Image file name:", "image.mwi");
+            a.download = prompt("Enter image filename:", "image.mwi") || "image.mwi";
             a.click();
         }
 
+
         function processCameraFeed() {
-            // requestAnimationFrame(processCameraFeed);
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
             const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const data = img.data;
 
-            const offset = (x, y) => (y * img.width + x) * 4;
+            for (let i = 0; i < data.length; i += 4) {
+                const v = data[i] + data[i + 1] + data[i + 2];
+                let intensity = 0;
 
-            for (let x = 0; x < img.width; x++) {
-                for (let y = 0; y < img.height; y++) {
-                    const off = offset(x, y);
-                    const v = data[off] + data[off + 1] + data[off + 2];
-
-                    let intensity = 0;
-
-                    for (const { threshold, value } of intensityMap) {
-                        if (v > threshold) {
-                            intensity = value;
-                            break;
-                        }
+                for (const { threshold, value } of intensityMap) {
+                    if (v > threshold) {
+                        intensity = value;
+                        break;
                     }
-
-                    data[off] = intensity;
-                    data[off + 1] = intensity;
-                    data[off + 2] = intensity;
                 }
+
+                data[i] = data[i + 1] = data[i + 2] = intensity;
             }
 
             ctx.putImageData(img, 0, 0);
         }
+
+        function update() {
+            if (isRecording)
+                processCameraFeed()
+            document.getElementById("record-button").innerText = (isRecording ? "stop" : "start") + " recording"
+            requestAnimationFrame(update);
+        }
+
+        update()
+
+        document.getElementById("fileInput").addEventListener("change", (event) => {
+            const file = event.target.files[0];
+            openFile(file);
+        });
 
         startCamera();
     </script>

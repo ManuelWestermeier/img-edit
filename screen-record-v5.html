@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time Audio Processing</title>
+    <style>
+        * {
+            margin: 5px;
+        }
+
+        body {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            grid-template-columns: 1fr;
+            gap: 20px;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+
+        header {
+            text-align: center;
+        }
+
+        #content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        audio {
+            border: 1px solid black;
+            border-radius: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>Real-Time Audio Processing</h1>
+    </header>
+    <main id="content">
+        <audio id="audio" controls></audio>
+        <button id="start-audio-button" onclick="startRecording()">Start Recording</button>
+        <button id="stop-audio-button" onclick="stopRecording()" disabled>Stop Recording</button>
+    </main>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        const audio = document.getElementById("audio");
+        const startButton = document.getElementById("start-audio-button");
+        const stopButton = document.getElementById("stop-audio-button");
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioContext.createMediaStreamSource(stream);
+
+                // Create a ScriptProcessorNode for real-time audio processing
+                const bufferSize = 4096;
+                const scriptNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
+
+                // Connect nodes
+                source.connect(scriptNode);
+                scriptNode.connect(audioContext.destination);
+
+                // Process audio chunks every buffer-size frame (~<100ms chunks depending on bufferSize)
+                scriptNode.onaudioprocess = (event) => {
+                    const inputBuffer = event.inputBuffer.getChannelData(0);
+
+                    // Example: Log the first few samples
+                    console.log("Chunk processed. First 5 samples:", inputBuffer.slice(0, 5));
+
+                    // Optional: Do any real-time operations here (e.g., visualization or modification)
+                };
+
+                // Use MediaRecorder for larger data handling (saving audio)
+                mediaRecorder = new MediaRecorder(stream);
+                mediaRecorder.start();
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    audio.src = audioUrl;
+                };
+
+                startButton.disabled = true;
+                stopButton.disabled = false;
+            } catch (error) {
+                console.error("Error accessing audio devices:", error);
+                alert("Could not access the microphone.");
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder) {
+                mediaRecorder.stop();
+            }
+            startButton.disabled = false;
+            stopButton.disabled = true;
+        }
+    </script>
+</body>
+
+</html>

@@ -34,24 +34,54 @@
             display: none;
         }
 
-        video,
+        /* video,
         canvas {
             border: 1px solid black;
             border-radius: 10px;
+        } */
+
+        * {
+            margin: 0;
+            padding: 0;
+            border: none;
+            background-color: black;
+        }
+
+        body {
+            position: fixed;
+            top: 0;
+            left: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        .c1 {
+            width: 100dvw;
+        }
+
+        .c2 {
+            height: 100dvh;
         }
     </style>
 </head>
 
 <body>
-<!--     <header>
+    <!--     <header>
         <h1>Real-Time Camera Processing</h1>
     </header> -->
     <main id="content">
         <video class="hidden" id="video" autoplay playsinline></video>
         <canvas id="canvas"></canvas>
         <button onclick="makePhoto()">Take Photo</button>
-<!--         <button id="record-button" onclick="toggleIsRecording()">Stop Record</button> -->
-<!--         <input type="file" id="fileInput" accept=".mwi" multiple="false"> -->
+        <!--         <button id="record-button" onclick="toggleIsRecording()">Stop Record</button> -->
+        <!--         <input type="file" id="fileInput" accept=".mwi" multiple="false"> -->
     </main>
 
     <script>
@@ -83,6 +113,10 @@
                 video.addEventListener('loadedmetadata', () => {
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
+                    if (canvas.width > canvas.height) {
+                        canvas.setAttribute("class", "c1")
+                    } else
+                        canvas.setAttribute("class", "c2")
                     processCameraFeed();
                 });
             } catch (error) {
@@ -138,44 +172,44 @@
             fileReader.readAsArrayBuffer(file);
         }
 
-        canvas.onclick = makePhoto; 
+        canvas.onclick = makePhoto;
 
         function makePhoto() {
-            if(!confirm("download image")) return;
+            if (!confirm("download image")) return;
             const a = document.createElement("a");
             a.href = canvas.toDataURL();
             a.download = prompt("Enter image filename:", "image.png") || "image.png";
             a.click();
             return;
-            processCameraFeed();
-            const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = img.data;
+            // processCameraFeed();
+            // const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            // const data = img.data;
 
-            const out = [];
-            let state = 255;
-            let count = 1;
+            // const out = [];
+            // let state = 255;
+            // let count = 1;
 
-            for (let index = 0; index < data.length; index += 4) {
-                if (data[index] === state) {
-                    count++;
-                    if (count === 32) {
-                        out.push((count << 5) | valueIndex.indexOf(state));
-                        count = 0;
-                    }
-                } else {
-                    out.push((count << 5) | valueIndex.indexOf(state));
-                    state = data[index];
-                    count = 1;
-                }
-            }
+            // for (let index = 0; index < data.length; index += 4) {
+            //     if (data[index] === state) {
+            //         count++;
+            //         if (count === 32) {
+            //             out.push((count << 5) | valueIndex.indexOf(state));
+            //             count = 0;
+            //         }
+            //     } else {
+            //         out.push((count << 5) | valueIndex.indexOf(state));
+            //         state = data[index];
+            //         count = 1;
+            //     }
+            // }
 
-            const header = new Uint16Array([img.width, img.height]);
-            const body = new Uint8Array(out.reverse());
+            // const header = new Uint16Array([img.width, img.height]);
+            // const body = new Uint8Array(out.reverse());
 
-            const blob = new Blob([header, body], { type: "application/octet-stream" });
-            const a = document.createElement("a");
-            a.href = URL.createObjectURL(blob);
-            a.download = prompt("Enter image filename:", "image.mwi") || "image.mwi";
+            // const blob = new Blob([header, body], { type: "application/octet-stream" });
+            // const a = document.createElement("a");
+            // a.href = URL.createObjectURL(blob);
+            // a.download = prompt("Enter image filename:", "image.mwi") || "image.mwi";
             a.click();
         }
 
@@ -206,16 +240,16 @@
         function update() {
             if (isRecording)
                 processCameraFeed()
-            document.getElementById("record-button").innerText = (isRecording ? "stop" : "start") + " recording"
+            // document.getElementById("record-button").innerText = (isRecording ? "stop" : "start") + " recording"
             requestAnimationFrame(update);
         }
 
         update()
 
-        document.getElementById("fileInput").addEventListener("change", (event) => {
-            const file = event.target.files[0];
-            openFile(file);
-        });
+        // document.getElementById("fileInput").addEventListener("change", (event) => {
+        //     const file = event.target.files[0];
+        //     openFile(file);
+        // });
 
         startCamera();
     </script>
